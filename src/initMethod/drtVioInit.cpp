@@ -9,13 +9,16 @@
 #include <opencv2/core/eigen.hpp>
 #include <opencv2/opencv.hpp>
 #include <fstream>
+#include <array> //newo
 #include "utils/eigenUtils.hpp"
 
 #include "initMethod/drtVioInit.h"
 #include "initMethod/geometry.hpp"
 #include "initMethod/polynomial.h"
-
-
+#include "factor/poseLocalParam.h" //newo
+#include "factor/imuIntegFactor.h" //newo
+#include <ceres/gradient_checker.h> //newo
+#include "factor/epipolarFactor.h" //newo
 namespace DRT {
 
     using namespace vio;
@@ -437,7 +440,142 @@ namespace DRT {
 
         return true;
     }
+    
+    // NEWo
+    bool drtVioInit::structurelessVIBA() {
+           /* {   // ===== TEMP: manual manifold gradient check (delete after PASS) =====
+    std::array<double,6> xi{}, xj{};
+    Eigen::Map<Eigen::Vector3d>(xi.data())   = Eigen::Vector3d( 0.10,-0.20, 0.30);
+    Eigen::Map<Eigen::Vector3d>(xi.data()+3) = Eigen::Vector3d( 0.00, 0.00, 0.00);
+    Eigen::Map<Eigen::Vector3d>(xj.data())   = Eigen::Vector3d(-0.15, 0.05, 0.20);
+    Eigen::Map<Eigen::Vector3d>(xj.data()+3) = Eigen::Vector3d( 0.50, 0.10,-0.20);
+    Eigen::Vector3d zi(0.1, 0.2, 1.0), zj(-0.05, 0.15, 1.0);
 
+    EpipolarFactor factor(zi, zj, Rbc_, pbc_, 1.0);
+    PoseLocalParameterization plus;
+
+    double r0, Ja[6], Jb[6];
+    double* jac[2] = { Ja, Jb };
+    const double* prm[2] = { xi.data(), xj.data() };
+    factor.Evaluate(prm, &r0, jac);                       // analytic
+
+    const double eps = 1e-6;
+    double worst = 0.0;
+    for (int blk = 0; blk < 2; ++blk) {
+        std::array<double,6> base = (blk == 0 ? xi : xj);
+        for (int k = 0; k < 6; ++k) {
+            std::array<double,6> d{}; d[k] = eps;
+            std::array<double,6> pert{};
+            plus.Plus(base.data(), d.data(), pert.data());     // perturb via manifold
+            std::array<double,6> xi2 = xi, xj2 = xj;
+            (blk == 0 ? xi2 : xj2) = pert;
+            double r1;
+            const double* prm2[2] = { xi2.data(), xj2.data() };
+            factor.Evaluate(prm2, &r1, nullptr);               // residual only
+            double num = (r1 - r0) / eps;
+            double ana = (blk == 0 ? Ja[k] : Jb[k]);
+            worst = std::max(worst, std::abs(ana - num));
+            std::cout << "blk" << blk << " col" << k
+                      << "  ana " << ana << "  num " << num
+                      << "  err " << std::abs(ana - num) << std::endl;
+        }
+    }
+    std::cout << "[epipolar manifold check] worst err = " << worst
+              << (worst < 1e-4 ? "  PASSED" : "  FAILED") << std::endl;
+    return true;
+}   // ===== end TEMP =====
+*/
+    // Step 0: gravity-align into z-up frame
+    R_align_ = Utility::g2R(gravity);
+    for (int i = 0; i < (int)rotation.size(); ++i) {
+        rotation[i] = R_align_ * rotation[i];
+        position[i] = R_align_ * position[i];
+        velocity[i] = R_align_ * velocity[i];
+    }
+    gravity = R_align_ * gravity;
+
+    // [Steps 1-4 optimization will go here]
+        // ===== IMU-only bundle adjustment (visual factors added later) =====
+    const int N = (int)rotation.size();
+
+    // per-keyframe parameter blocks: pose=[log(R), p](6), speed_bias=[v, bg, ba](9)
+    std::vector<std::array<double, 6>> pose(N);
+    std::vector<std::array<double, 9>> speed_bias(N);
+    for (int i = 0; i < N; ++i) {
+        Eigen::Quaterniond q(rotation[i]); q.normalize();
+        Eigen::Map<Eigen::Vector3d>(pose[i].data())           = Sophus::SO3d(q).log();
+        Eigen::Map<Eigen::Vector3d>(pose[i].data() + 3)       = position[i];
+        Eigen::Map<Eigen::Vector3d>(speed_bias[i].data())     = velocity[i];
+        Eigen::Map<Eigen::Vector3d>(speed_bias[i].data() + 3) = biasg;
+        Eigen::Map<Eigen::Vector3d>(speed_bias[i].data() + 6) = biasa;
+    }
+
+    ceres::Problem problem;
+    for (int i = 0; i < N; ++i) {
+        problem.AddParameterBlock(pose[i].data(), 6, new PoseLocalParameterization());
+        problem.AddParameterBlock(speed_bias[i].data(), 9);
+    }
+    problem.SetParameterBlockConstant(pose[0].data());   // fix gauge on KF0
+
+    for (int i = 0; i < N - 1; ++i) {
+        auto* imu_factor = new vio::ImuIntegFactor(&imu_meas[i]);
+        problem.AddResidualBlock(imu_factor, nullptr,
+                                 pose[i].data(),     speed_bias[i].data(),
+                                 pose[i + 1].data(), speed_bias[i + 1].data());
+    }
+        // ===== epipolar visual factors over co-visible keyframe pairs =====
+    ceres::LossFunction* vis_loss = new ceres::HuberLoss(1.0);
+    const double vis_weight = 3.0;   // = Σ_C^{-1/2}; the IMU-vs-vision balance knob (tune)
+    int n_epi = 0;
+    for (const auto& kv : SFMConstruct) {
+        const auto& obs = kv.second.obs;
+        if (obs.size() < 2) continue;
+        for (auto it_i = obs.begin(); it_i != obs.end(); ++it_i) {
+            auto it_j = std::next(it_i);
+            for (; it_j != obs.end(); ++it_j) {
+                int i = time_frameid2_int_frameid.at(it_i->first);
+                int j = time_frameid2_int_frameid.at(it_j->first);
+                if ((position[i] - position[j]).norm() < 0.1) continue; //additiono
+                auto* ef = new EpipolarFactor(it_i->second.normalpoint,
+                                              it_j->second.normalpoint,
+                                              Rbc_, pbc_, vis_weight);
+                problem.AddResidualBlock(ef, vis_loss, pose[i].data(), pose[j].data());
+                ++n_epi;
+            }
+        }
+    }
+    std::cout << "[VI-BA] epipolar factors: " << n_epi << std::endl;
+
+    //
+    ceres::Solver::Options options;
+    options.linear_solver_type = ceres::DENSE_SCHUR;
+    options.trust_region_strategy_type = ceres::DOGLEG;
+    options.max_num_iterations = 50;
+    ceres::Solver::Summary summary;
+    ceres::Solve(options, &problem, &summary);
+    std::cout << "[VI-BA imu-only] " << summary.BriefReport() << std::endl;
+
+    // write refined states back (still in the aligned frame; un-align follows below)
+    for (int i = 0; i < N; ++i) {
+        Eigen::Vector3d w = Eigen::Map<const Eigen::Vector3d>(pose[i].data());
+        rotation[i] = Sophus::SO3d::exp(w).matrix();
+        position[i] = Eigen::Map<const Eigen::Vector3d>(pose[i].data() + 3);
+        velocity[i] = Eigen::Map<const Eigen::Vector3d>(speed_bias[i].data());
+    }
+    biasg = Eigen::Map<const Eigen::Vector3d>(speed_bias[0].data() + 3);
+    biasa = Eigen::Map<const Eigen::Vector3d>(speed_bias[0].data() + 6);
+    // ==================================================================
+    // undo alignment: return public state to original frame
+    Eigen::Matrix3d Rt = R_align_.transpose();
+    for (int i = 0; i < (int)rotation.size(); ++i) {
+        rotation[i] = Rt * rotation[i];
+        position[i] = Rt * position[i];
+        velocity[i] = Rt * velocity[i];
+    }
+    gravity = Rt * gravity;
+    return true;
+    }
+    // NEWo ends
 
 }
 

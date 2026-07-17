@@ -52,6 +52,8 @@ namespace DRT {
 
         void recomputeFrameId();
 
+        bool structurelessVIBA(); //new
+
         bool checkAccError();
 
         inline Eigen::Matrix3d cross_product_matrix(const Eigen::Vector3d &x) {
@@ -77,6 +79,8 @@ namespace DRT {
         std::vector<Eigen::Vector3d> velocity;
         std::vector<Eigen::Vector3d> position;
         std::vector<Eigen::Matrix3d> rotation;
+
+        Eigen::Matrix3d R_align_ = Eigen::Matrix3d::Identity(); // new
 
         Eigen::Matrix3d Rbc_;
         Eigen::Vector3d pbc_;

@@ -93,6 +93,7 @@ namespace DRT
 
         ticToc t_velocity_gravity;
         if (linearAlignment()) {
+            structurelessVIBA(); // new
             return true;
         } else {
             printf("solve g failed!\n");
