@@ -3,7 +3,7 @@
 # dataset_path
 dataset_type: "euroc"
 # MH_05_difficult
-data_path: "/home/bxu/robust_VIO/MH_02_easy/mav0/"
+data_path: "/home/aze-pc-0331/datasets/euroc/MH_01_easy/mav0/"
 camera_num: 1
 camera_name: "cam0"
 imu_path: "imu0"
