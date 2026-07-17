@@ -249,7 +249,11 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        if ( !pDrtVioInit->process()) {
+        ticToc t_solve;
+        bool init_ok = pDrtVioInit->process();
+        double solve_time_ms = t_solve.toc();
+        std::cout << "solve_time: " << solve_time_ms << std::endl;
+        if ( !init_ok) {
             save_file << "time: " << fixed << idx_time[0] << " other_reason" << std::endl;
             save_file << "scale_error: " << "nan" << std::endl;
             save_file << "pose_error: " << "nan" << std::endl;
@@ -372,7 +376,29 @@ int main(int argc, char **argv) {
         pose_rmse = std::sqrt(pose_rmse);
 
         std::cout << "vins sfm pose rmse: " << pose_rmse << std::endl;
-
+                // --- posyaw ATE (paper's metric) --- NEWo
+        double ate_posyaw = 0;
+        {
+            int Np = idx_time.size();
+            Eigen::Vector3d p_bar = est_aligned_pose.rowwise().mean();
+            Eigen::Vector3d q_bar = gt_aligned_pose.rowwise().mean();
+            double sxy = 0, cxy = 0;
+            for (int i = 0; i < Np; i++) {
+                Eigen::Vector3d p = est_aligned_pose.col(i) - p_bar;
+                Eigen::Vector3d q = gt_aligned_pose.col(i) - q_bar;
+                sxy += p.x()*q.y() - p.y()*q.x();
+                cxy += p.x()*q.x() + p.y()*q.y();
+            }
+            double yaw = std::atan2(sxy, cxy);
+            Eigen::Matrix3d Rz = Eigen::Matrix3d::Identity();
+            Rz(0,0)=std::cos(yaw); Rz(0,1)=-std::sin(yaw);
+            Rz(1,0)=std::sin(yaw); Rz(1,1)= std::cos(yaw);
+            Eigen::Vector3d ty = q_bar - Rz*p_bar;
+            for (int i = 0; i < Np; i++)
+                ate_posyaw += (Rz*est_aligned_pose.col(i)+ty - gt_aligned_pose.col(i)).squaredNorm();
+            ate_posyaw = std::sqrt(ate_posyaw/Np);
+        }
+        std::cout << "ate_posyaw: " << ate_posyaw << std::endl;
         // gravity accuracy estimation
         double gravity_error =
                 180. * std::acos(pDrtVioInit->gravity.normalized().dot(gt_g_imu[0].normalized())) / EIGEN_PI;
