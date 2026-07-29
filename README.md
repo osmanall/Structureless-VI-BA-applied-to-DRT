@@ -1,5 +1,14 @@
 
 # drt-vio-initialization
+
+> **Note:** This is a modified fork of the original DRT-VIO-Init by Bo Xu et al.
+> ([boxuLibrary/drt-vio-init](https://github.com/boxuLibrary/drt-vio-init)).
+> It adds a **structureless VI-BA** refinement stage on top of the DRT-l initializer
+> (SO3×R³ pose parameterization, structureless epipolar factor, IMU + epipolar bundle
+> adjustment), plus UZH-FPV fisheye support and trajectory-comparison tooling.
+> All original code remains under its **GNU GPL v3** license (see `LICENSE`); the
+> modifications here are released under the same license.
+
 ## Decoupled Rotation and Translation VIO initialization
 An accurate and robust initialization is crucial for visual inertial odometry (VIO). Existing loosely-coupled VIO initialization methods suffer from poor stability from structure-from-motion (SfM). Whereas tightly-copupled methods often ignore the gyroscope bias in the closed-form solution, resulting in limited accuracy. Moreover, the aforementioned two classes of methods are computationally expensive, because 3D point clouds need to be reconstructed simultaneously. We propose a novel VIO initialization method, which decouples rotation and translation estimation, and achieves higher efficiency and better robustness. This code is the implementation of our proposed method, which runs on **Linux**. We also provide the code of loosely coupled method and tightly coupled method for comparision as described in the paper. Since I am still busy cleaning up the code,  we released  the drt-vio-initialization and other comparison algorithms will be released later.
 
