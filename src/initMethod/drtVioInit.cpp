@@ -525,7 +525,7 @@ namespace DRT {
     }
         // ===== epipolar visual factors over co-visible keyframe pairs =====
     ceres::LossFunction* vis_loss = new ceres::HuberLoss(1.0);
-    const double vis_weight = 3.0;   // = Σ_C^{-1/2}; the IMU-vs-vision balance knob (tune)
+    const double vis_weight = 20.0;   // = Σ_C^{-1/2}; the IMU-vs-vision balance knob (tune)
     int n_epi = 0;
     for (const auto& kv : SFMConstruct) {
         const auto& obs = kv.second.obs;
