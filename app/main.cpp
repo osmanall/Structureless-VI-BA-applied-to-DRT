@@ -374,7 +374,16 @@ int main(int argc, char **argv) {
         }
         pose_rmse /= idx_time.size();
         pose_rmse = std::sqrt(pose_rmse);
-
+        {
+            std::ofstream tf("../result/traj_" + string(codeType) + "_" + string(dataType) + ".txt",
+                             std::ios::app);
+            for (int i = 0; i < (int)idx_time.size(); i++) {
+                Eigen::Vector3d e = R * est_aligned_pose.col(i) + t;   // aligned estimate
+                Eigen::Vector3d g = gt_aligned_pose.col(i);            // ground truth
+                tf << e(0) << " " << e(1) << " " << g(0) << " " << g(1) << "\n";
+            }
+            tf << "\n";   // blank line separates windows
+        }
         std::cout << "vins sfm pose rmse: " << pose_rmse << std::endl;
                 // --- posyaw ATE (paper's metric) --- NEWo
         double ate_posyaw = 0;
