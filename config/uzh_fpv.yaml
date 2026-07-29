@@ -1,0 +1,65 @@
+%YAML:1.0
+dataset_type: "euroc"
+data_path: "/home/aze-pc-0331/Downloads/uzh_fpv/mav0/"
+camera_num: 1
+camera_name: "cam0"
+imu_path: "imu0"
+has_ground_truth: 1
+ground_truth_path: "state_groundtruth_estimate0"
+camera_freq: 30
+imu_freq: 500
+
+#camera calibration  (UZH-FPV Snapdragon cam0, fisheye/equidistant)
+model_type: KANNALA_BRANDT
+image_width: 640
+image_height: 480
+projection_parameters:
+   k2: -0.005719912631104124
+   k3: 0.004742449009601135
+   k4: 0.0012060658036136048
+   k5: -0.001580292679344826
+   mu: 277.4786896484645
+   mv: 277.42548548840034
+   u0: 320.1052053576385
+   v0: 242.10083077857894
+
+# Extrinsic  (imu^R_cam / imu^T_cam, inverted from Kalibr T_cam_imu)
+estimate_extrinsic: 0
+extrinsicRotation: !!opencv-matrix
+  rows: 3
+  cols: 3
+  dt: d
+  data: [-0.0317977829375722, 0.0128278441208857, 0.9994120008362244,
+         -0.9994933985910031, 0.0009515801497960, -0.0318125866321004,
+         -0.0013591075238624, -0.9999172670328423, 0.0127910873779288]
+extrinsicTranslation: !!opencv-matrix
+  rows: 3
+  cols: 1
+  dt: d
+  data: [0.0101684679480710, 0.0208034622682520, -0.0007491261255117]
+
+#feature tracker
+max_cnt: 150
+min_dist: 30
+freq: 10
+F_threshold: 0.5
+show_track: 0
+equalize: 1
+fisheye: 0
+
+#optimization
+max_solver_time: 0.04
+max_num_iterations: 8
+keyframe_parallax: 100.0
+
+#imu parameters  (UZH-FPV Snapdragon)
+acc_n: 0.1
+gyr_n: 0.05
+acc_w: 0.002
+gyr_w: 4.0e-5
+g_norm: 9.81
+
+estimate_td: 0
+td: -0.008
+rolling_shutter: 0
+rolling_shutter_tr: 0
